@@ -68,12 +68,14 @@ def rescale_pvs(pvs):
 
 def calc_sphere_pvs(cent, r_g, r_w, spc, superfactor):
     spc_high = spc.resize_voxels(1/superfactor)
-    xyz = spc_high.voxel_centres()[:,:,0,:]
-    r = np.sqrt(((xyz[:,:,0] - cent[0]) ** 2) + ((xyz[:,:,1] - cent[1]) ** 2))
+    xyz = spc_high.voxel_centres()
+    r = np.sqrt(((xyz[...,0] - cent[0]) ** 2) 
+                + ((xyz[...,1] - cent[1]) ** 2) 
+                + ((xyz[...,2] - cent[2]) ** 2))
     wm = (r < r_g) & (r < r_w)
     gm = (r < r_g) & (r >= r_w)
-    wm_pv = rt.application_helpers.sum_array_blocks(wm[:,:,None], [superfactor,superfactor,1]) / (superfactor ** 2)
-    gm_pv = rt.application_helpers.sum_array_blocks(gm[:,:,None], [superfactor,superfactor,1]) / (superfactor ** 2)
+    wm_pv = rt.application_helpers.sum_array_blocks(wm, 3*[superfactor]) / (superfactor ** 3)
+    gm_pv = rt.application_helpers.sum_array_blocks(gm, 3*[superfactor]) / (superfactor ** 3)
     pvs = np.stack([gm_pv, wm_pv], axis=-1)
     return pvs 
 
