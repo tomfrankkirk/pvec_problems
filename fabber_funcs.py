@@ -19,7 +19,6 @@ MODEL_OPTIONS = {
     "pld3": 1.75,
     "pld4": 2,
     "pld5": 2.25,
-    "repeats": 5,
     "tau": 1,
     "casl": True,
     "inctiss": True,
@@ -29,7 +28,9 @@ MODEL_OPTIONS = {
     "lambdawm": 0.9,
     "t1": 1.3, 
     "t1b": 1.65,
-    'batsd': 1e-6,
+    "batsd": 1e-6,
+    "pvcorr": True,
+    "t1wm": 1.3,
 }
 
 PARAMS = {
@@ -39,15 +40,32 @@ PARAMS = {
 
 
 # Simulate data using fabber's forward model 
-def get_fabber_data(ftiss, delttiss, data_shape, opts):
+def get_fabber_data(cbf, bat, pvs, opts): 
     fab = FabberCl()
-    vols = N_PLDS * opts['repeats']
-    data = fab.model_evaluate(opts, {
-        'ftiss': ftiss, 
-        'delttiss': delttiss,
-    }, vols)
-    out = np.ones((*data_shape, vols))
-    out *= np.array(data)[None,None,None,:]
+    nvols = N_PLDS * opts['repeats']
+    
+    gm = fab.model_evaluate(opts, {
+        'ftiss': cbf[0], 
+        'delttiss': bat[0],
+        'fwm': cbf[1],
+        'deltwm': bat[1],
+        'pvgm': 1.0, 
+        'pvwm': 0.0,
+    }, nvols)
+    
+    wm = fab.model_evaluate(opts, {
+        'ftiss': cbf[0], 
+        'delttiss': bat[0],
+        'fwm': cbf[1],
+        'deltwm': bat[1],
+        'pvgm': 0.0, 
+        'pvwm': 1.0,
+    }, nvols)
+    
+    ones = np.ones((*pvs.shape[:3], nvols))
+    out = ((ones * np.array(gm)[None,None,None,:] * pvs[...,0,None])
+          + (ones * np.array(wm)[None,None,None,:] * pvs[...,1,None]))
+        
     return out
 
 
@@ -79,7 +97,8 @@ def run_oxasl(data, mask, opts, pvs=None):
         optsfile = op.join(d, 'basil_opts.txt')
         with open(optsfile, 'w') as f: 
             f.write("\n".join([f"lambda={opts['lambda']}", 
-                               f"lambdawm={opts['lambdawm']}"]))
+                               f"lambdawm={opts['lambdawm']}",
+                                "--t1wm=1.3"]))
             if 'WM_BAT' in opts: 
                 f.write("\n".join(["",
                                f"batwm={opts['WM_BAT']}", 
@@ -91,7 +110,7 @@ def run_oxasl(data, mask, opts, pvs=None):
         cmd = ("oxasl --iaf=diff --overwrite --no-report --artoff"
               + f" --fixbolus --ibf=tis --basil-options={optsfile}"
               + f" --t1={opts['t1']} --t1b={opts['t1b']}" 
-              + f" --alpha={opts['alpha']} --casl " 
+              + f" --alpha={opts['alpha']} --casl --rpts={opts['repeats']}" 
               + f" -i {dpath} -o {odir} -m {mpath} --debug "
               + f" --tau={opts['tau']} {pldstr} --batsd={opts['batsd']}")
         if pvcorr: 
