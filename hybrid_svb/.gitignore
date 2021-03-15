@@ -1,0 +1,6 @@
+*out*
+__pycache__
+*gii
+figs
+*.h5
+*.nii.gz
