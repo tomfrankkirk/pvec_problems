@@ -1,3 +1,7 @@
 .ipynb_checkpoints
 .DS_Store
 __pycache__
+.vscode
+*.h5
+figs
+*.gii
