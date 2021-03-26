@@ -28,7 +28,7 @@ CBF = [60, 20]
 ATT = [1.3, 1.6]
 TAU = 1.0
 PLD_REPEATS = 8
-NOISE_VAR = 4
+NOISE_VAR = 10
 PLDS = [1.0, 1.25, 1.5, 1.75, 2.0]
 N_REPEATS = 4
 
@@ -156,7 +156,7 @@ def fit_simulations():
         jobs += lr_method.basil_lr(asl, mask, opts, odir, pvs_native)
 
     worker = functools.partial(subprocess.run, shell=True)
-    with multiprocessing.Pool(8) as p: 
+    with multiprocessing.Pool(12) as p: 
         p.map(worker, jobs)
 
 
@@ -295,14 +295,14 @@ def fit_real():
     jobs += lr_method.oxasl_lr(apath, cpath, mpath, odir, bopts, pvs)
 
     worker = functools.partial(subprocess.run, shell=True)
-    with multiprocessing.Pool(8) as p: 
+    with multiprocessing.Pool(12) as p: 
         p.map(worker, jobs)
 
 
 
 if __name__ == '__main__':
 
-    prepare_sim_data()
+    # prepare_sim_data()
     fit_simulations()
 
     # prepare_real_data()
