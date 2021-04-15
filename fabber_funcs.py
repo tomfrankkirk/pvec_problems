@@ -36,40 +36,6 @@ def basil_cmd(asl, mask, opts, odir, pvs=None):
 
     return cmd 
 
-    # # if no PVEc, return a single volume of CBF
-    # # if PVEc, return a 4D volume, arranged (GM,WM) in last dimension
-    # if pvcorr: 
-    #     gcbf = nibabel.load(op.join(odir, 
-    #                     'step2/mean_ftiss.nii.gz'))
-    #     wcbf = nibabel.load(op.join(odir, 
-    #                     'step2/mean_fwm.nii.gz'))
-    #     cbfs = np.stack((gcbf.get_fdata(), wcbf.get_fdata()), axis=-1)
-    #     gatt = nibabel.load(op.join(odir, 
-    #                     'step2/mean_delttiss.nii.gz'))
-    #     watt = nibabel.load(op.join(odir, 
-    #                     'step2/mean_deltwm.nii.gz'))
-    #     atts = np.stack((gatt.get_fdata(), watt.get_fdata()), axis=-1)
-
-    #     log = open(op.join(odir, 'step2/logfile'), 'r').read()
-    #     idx = log.index('*** Spatial iteration *** 200')
-    #     log = log[idx:]
-    #     substr = 'SpatialPrior::Calculate aK 0: New aK: '
-    #     start = log.index(substr) + len(substr)
-    #     end = log[start:].index('\n')
-    #     final_ak = float(log[start:start+end])
-    #     print('final ak', final_ak)
-
-    # else: 
-    #     cbfs = nibabel.load(op.join(odir, 
-    #                     'step1/mean_ftiss.nii.gz')).get_fdata()
-    #     atts = nibabel.load(op.join(odir, 
-    #                     'step1/mean_delttiss.nii.gz')).get_fdata()
-        
-    # if odir is None: 
-    #     d.clean_up()
-        
-    # return cbfs, atts
-
 
 
 def oxasl_cmd(asl, calib, mask, odir, opts, pvs=None):
@@ -101,7 +67,7 @@ def oxasl_cmd(asl, calib, mask, odir, opts, pvs=None):
         cmd += ["--pvcorr", "--pvgm", pvs[0], "--pvwm", pvs[1],]
 
     return " ".join(cmd)
-#     res = subprocess.run(cmd, stderr=subprocess.PIPE)
+
 
 #     if pvs is not None: 
 #         pvdir = op.join(odir, 'output_pvcorr/native')

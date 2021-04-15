@@ -32,6 +32,15 @@ NOISE_VAR = 10
 PLDS = [1.0, 1.25, 1.5, 1.75, 2.0]
 N_REPEATS = 4
 
+def eval_snr():
+    opts = dict(plds=PLDS, repeats=PLD_REPEATS, tau=TAU, casl=True, 
+                pvcorr=True)
+    data = svb_sim_data([CBF[0], ATT[0], CBF[1], ATT[1]], NOISE_VAR / 2, opts, [1])
+    print('max signal', data.max())
+    print('max pld', PLDS[ np.argmax(data) // len(PLDS) ])
+    print('snr', data.max() / NOISE_VAR)
+
+
 
 def make_transform():
     """
@@ -89,12 +98,15 @@ def prepare_sim_data():
     for idx in range(N_REPEATS):
 
         trans = make_transform()
+        trans.save_txt(str(SIM_ROOT / f'rpt{idx+1}_common_to_acq.txt'))
         pvs_rpt = trans.apply_to_array(pvs, spc, spc, order=1)
         opts = dict(plds=PLDS, repeats=PLD_REPEATS, tau=TAU, casl=True, 
                     pvcorr=True, mask=brain_mask, pvgm=pvs_rpt[...,0],
                     pvwm=pvs_rpt[...,1])
         data_rpt = svb_sim_data([CBF[0], ATT[0], CBF[1], ATT[1]], 
                                 NOISE_VAR, opts, spc.size)
+        spc.save_image(pvs_rpt, str(SIM_ROOT / f'pvs_rpt{idx}_in_acq.nii.gz'))
+        spc.save_image(data_rpt, str(SIM_ROOT / f'asl_rpt{idx}_in_acq.nii.gz'))
         data_cmn = trans.inverse().apply_to_array(data_rpt, spc, spc, order=1)
         pvs_cmn = trans.inverse().apply_to_array(pvs_rpt, spc, spc, order=1)
         spc.save_image(data_cmn, str(SIM_ROOT / f'asl_rpt{idx}_in_common.nii.gz'))
@@ -155,6 +167,15 @@ def fit_simulations():
         odir = str(SIM_ROOT /  f'lr_rpt{idx}_naive')
         jobs += lr_method.basil_lr(asl, mask, opts, odir, pvs_native)
 
+        # Repeats analysed in their native acquisition space 
+        asl = str(SIM_ROOT / f'asl_rpt{idx}_in_acq.nii.gz')
+        pvs = str(SIM_ROOT / f'pvs_rpt{idx}_in_acq.nii.gz')
+        odir = str(SIM_ROOT / f'basil_rpt{idx}_in_acq')
+        jobs.append(fabber_funcs.basil_cmd(asl, mask, opts, odir, pvs))
+
+        odir = str(SIM_ROOT /  f'lr_rpt{idx}_in_acq')
+        jobs += lr_method.basil_lr(asl, mask, opts, odir, pvs)
+
     worker = functools.partial(subprocess.run, shell=True)
     with multiprocessing.Pool(12) as p: 
         p.map(worker, jobs)
@@ -163,7 +184,7 @@ def fit_simulations():
 
 def prepare_real_data():
 
-    # native space 
+#     native space 
     wdir = str(REAL_ROOT / 'native')
     apath = f'{wdir}/sub-SS_run-01_scale-2_space-native_asl.nii.gz'
     cpath = f'{wdir}/sub-SS_run-01_scale-2_space-native_M0.nii.gz'
@@ -193,7 +214,7 @@ def prepare_real_data():
         pvtrans.to_filename(f'{wdir}/{tiss}_resamp.nii.gz')
 
     tivol = np.indices(spc.size, dtype=np.float32)[-1]
-    tivol *= 0.0325
+    tivol *= (2 * 0.0325)
     tivol += 1.8
     tivol = np.stack(200 * [tivol], axis=-1)
     tivol_path = f'{wdir}/tivol.nii.gz'
@@ -218,6 +239,35 @@ def prepare_real_data():
 
     tivol_cmn = a2s.apply_to_array(tivol, spc, cpath)
     rt.ImageSpace.save_like(cpath, tivol_cmn, f'{wdir}/tivol.nii.gz')
+
+    # subject-02 repeats 
+    wdir = str(REAL_ROOT / '../maastricht-02/reg')
+    for run in range(3):
+        a2c = rt.Registration.from_flirt(f'{wdir}/run{run+1}_to_calib.mat',
+            f'{wdir}/sub-02_run-1_asl_vol0.nii.gz', 
+            f'{wdir}/M0_AP_vol0.nii.gz'
+        )
+
+        c2s = rt.Registration.from_flirt(f'{wdir}/calib2struct.mat',
+            f'{wdir}/M0_AP_vol0.nii.gz',
+            f'{wdir}/T1_biascorr_brain.nii.gz'
+        )
+
+        a2s = rt.chain(a2c, c2s)
+        nat_spc = rt.ImageSpace(f'{wdir}/../native/sub-02_run-01_scale-2_space-native_M0.nii.gz')
+        cmn_spc = rt.ImageSpace(f'{wdir}/../common/sub-02_run-01_scale-2_space-common_M0.nii.gz')
+        tivol = np.indices(nat_spc.size, dtype=np.float32)[-1]
+        tivol *= (2 * 0.0325)
+        tivol += 1.8
+        tivol = np.stack(100 * [tivol], axis=-1)
+
+        tivol_path = f'{wdir}/../native/tivol.nii.gz'
+        nat_spc.save_image(tivol, tivol_path)
+
+        tivol_cmn = a2s.apply_to_array(tivol, nat_spc, cmn_spc)
+        tivol_path = f'{wdir}/../common/tivol_rpt{run+1}.nii.gz'
+        cmn_spc.save_image(tivol_cmn, tivol_path)
+
 
 def fit_real(): 
 
@@ -294,6 +344,60 @@ def fit_real():
     odir = f'{wdir}/lr_naive'
     jobs += lr_method.oxasl_lr(apath, cpath, mpath, odir, bopts, pvs)
 
+    for rpt in range(3):
+
+        # Repeat acquisitions, native space 
+        wdir = str(REAL_ROOT / '../maastricht-02/native')
+        apath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-native_asl.nii.gz'
+        mpath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-native_mask.nii.gz'
+        cpath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-native_M0.nii.gz'
+        pvs = [f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-native_pvgm_tob.nii.gz',
+          f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-native_pvwm_tob.nii.gz']
+        tipath = f'{wdir}/tivol.nii.gz'
+
+        bopts = { 'bat': 1.3, 'batwm': 1.6, 'fixbat': True, 'tiimg': tipath }
+        odir = f'{wdir}/basil_native_rpt{rpt+1}'
+        jobs.append(
+            fabber_funcs.oxasl_cmd(apath, cpath, mpath, odir, bopts, pvs)
+        )
+
+        odir = f'{wdir}/lr_native_rpt{rpt+1}'
+        jobs += lr_method.oxasl_lr(apath, cpath, mpath, odir, bopts, pvs)
+
+        # Common space 
+        wdir = str(REAL_ROOT / '../maastricht-02/common')
+        apath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-common_asl.nii.gz'
+        mpath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-common_mask.nii.gz'
+        cpath = f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-common_M0.nii.gz'
+        pvs = [f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-common_pvgm_tob.nii.gz',
+          f'{wdir}/sub-02_run-{rpt+1:02d}_scale-2_space-common_pvwm_tob.nii.gz']
+        tipath = f'{wdir}/tivol.nii.gz'
+
+        # Double resampled pvs 
+        bopts = { 'bat': 1.3, 'batwm': 1.6, 'fixbat': True, 'tiimg': tipath }
+        odir = f'{wdir}/basil_double_rpt{rpt+1}'
+        jobs.append(
+            fabber_funcs.oxasl_cmd(apath, cpath, mpath, odir, bopts, pvs)
+        )
+
+        odir = f'{wdir}/lr_double_rpt{rpt+1}'
+        jobs += lr_method.oxasl_lr(apath, cpath, mpath, odir, bopts, pvs)
+
+        # Naive PVs 
+        pvs = [f'{wdir}/sub-02_scale-2_space-common_pvgm_tob_naive.nii.gz',
+          f'{wdir}/sub-02_scale-2_space-common_pvwm_tob_naive.nii.gz']
+
+        bopts = { 'bat': 1.3, 'batwm': 1.6, 'fixbat': True, 'tiimg': tipath }
+        odir = f'{wdir}/basil_naive_rpt{rpt+1}'
+        jobs.append(
+            fabber_funcs.oxasl_cmd(apath, cpath, mpath, odir, bopts, pvs)
+        )
+
+        odir = f'{wdir}/lr_naive_rpt{rpt+1}'
+        jobs += lr_method.oxasl_lr(apath, cpath, mpath, odir, bopts, pvs)
+
+
+
     worker = functools.partial(subprocess.run, shell=True)
     with multiprocessing.Pool(12) as p: 
         p.map(worker, jobs)
@@ -302,8 +406,9 @@ def fit_real():
 
 if __name__ == '__main__':
 
+    eval_snr()
     # prepare_sim_data()
-    fit_simulations()
+    # fit_simulations()
 
     # prepare_real_data()
     # fit_real() 
